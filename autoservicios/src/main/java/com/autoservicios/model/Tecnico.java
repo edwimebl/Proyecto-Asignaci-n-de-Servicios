@@ -1,5 +1,6 @@
 package com.autoservicios.model;
 
+import java.time.LocalDateTime;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.autoservicios.enums.EstadoTecnico;
 import jakarta.persistence.*;
@@ -24,6 +25,9 @@ public class Tecnico extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EstadoTecnico estado;
+
+    @Column(name = "ultima_asignacion")
+    private LocalDateTime ultimaAsignacion;
 
     public Long getId() {
         return id;
@@ -52,4 +56,13 @@ public class Tecnico extends BaseEntity {
     public void setEstado(EstadoTecnico estado) {
         this.estado = estado;
     }
+
+    public LocalDateTime getUltimaAsignacion() {
+        return ultimaAsignacion;
+    }
+
+    public void setUltimaAsignacion(LocalDateTime ultimaAsignacion) {
+        this.ultimaAsignacion = ultimaAsignacion;
+    }
+
 }

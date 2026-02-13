@@ -9,13 +9,19 @@ import java.util.List;
 
 public interface ServicioRepository extends JpaRepository<Servicio, Long> {
 
-    // 1️⃣ Traer todos los servicios por estado
+    // Traer todos los servicios por estado
     // Ejemplo: todos los PENDIENTES o FINALIZADOS
     List<Servicio> findByEstado(EstadoServicio estado);
 
-    // 2️⃣ Traer todos los servicios asignados a un técnico
+    // Traer todos los servicios asignados a un técnico
     List<Servicio> findByTecnico(Tecnico tecnico);
 
-    // 3️⃣ Traer servicios de un técnico filtrados por estado
+    // Traer servicios de un técnico filtrados por estado
     List<Servicio> findByTecnicoAndEstado(Tecnico tecnico, EstadoServicio estado);
+
+    //Buscar servicios en estado pendiente para cuando se libere el técnico pueda ser asigando
+    List<Servicio> findByCiudadAndEstadoOrderByFechaCreacionAsc(
+            String ciudad,
+            EstadoServicio estado);
+
 }

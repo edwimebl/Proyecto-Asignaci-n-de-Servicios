@@ -1,5 +1,7 @@
 package com.autoservicios.service;
 
+import java.util.List;
+
 import com.autoservicios.enums.EstadoServicio;
 import com.autoservicios.enums.TipoServicio;
 import com.autoservicios.model.Servicio;
@@ -19,5 +21,11 @@ public interface ServicioService {
     Servicio obtenerPorId(Long id);
 
     Servicio asignarTecnico(Long servicioId, Long tecnicoId);
+
+    void reasignarTecnico(Long idServicio, Long idTecnicoNuevo);
+
+    List<Servicio> listarServicios();
+
+    void eliminarServicio(Long id);
 
 }

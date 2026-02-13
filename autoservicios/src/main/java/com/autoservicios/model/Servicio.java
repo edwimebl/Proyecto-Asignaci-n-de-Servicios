@@ -1,5 +1,6 @@
 package com.autoservicios.model;
 
+
 import com.autoservicios.enums.EstadoServicio;
 import com.autoservicios.enums.TipoServicio;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -119,5 +120,6 @@ public class Servicio extends BaseEntity {
 
     public void setTecnico(Tecnico tecnico) {
         this.tecnico = tecnico;
-    }
+    }   
+
 }

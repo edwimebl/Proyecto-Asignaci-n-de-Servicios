@@ -48,6 +48,7 @@ public class ServicioController {
     public Servicio obtenerServicio(@PathVariable Long id) {
         return servicioService.obtenerPorId(id);
     }
+    
     //Asignar técnico manual cuando está en estado "PENDIENTE"
     
     @PatchMapping("/{id}/asignar-tecnico")
@@ -61,4 +62,14 @@ public class ServicioController {
 
         return ResponseEntity.ok(servicio);
     }
+    //Reasignar técnico a servicio ya con técnico asignado
+    @PatchMapping("/{idServicio}/reasignar-tecnico")
+    public ResponseEntity<?> reasignarTecnico(
+            @PathVariable Long idServicio,
+            @RequestParam Long idTecnicoNuevo) {
+
+        servicioService.reasignarTecnico(idServicio, idTecnicoNuevo);
+        return ResponseEntity.ok().build();
+    }
+
 }
