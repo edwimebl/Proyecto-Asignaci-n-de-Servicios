@@ -37,6 +37,8 @@ public class ServicioTecnicoHistorial {
     @Enumerated(EnumType.STRING)
     private MotivoFinAsignacion motivoFin;
 
+    //Getters and Setters
+
     public Long getId() {
         return id;
     }

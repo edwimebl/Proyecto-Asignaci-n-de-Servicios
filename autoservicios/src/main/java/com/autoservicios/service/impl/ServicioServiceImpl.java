@@ -6,6 +6,7 @@ import com.autoservicios.exception.RecursoNoEncontradoException;
 import com.autoservicios.model.*;
 import com.autoservicios.repository.*;
 import com.autoservicios.service.ServicioService;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,29 +31,33 @@ public class ServicioServiceImpl implements ServicioService {
         this.tecnicoRepository = tecnicoRepository;
         this.historialRepository = historialRepository;
     }
-
-    // ======================================================
-    // LISTAR SERVICIOS
-    // ======================================================
+    
+    //Método para listar los servicios generados
 
     @Override
     public List<Servicio> listarServicios() {
         return servicioRepository.findAll();
     }
+    
+    //Método para obteber un servicio por ID
 
-    // ======================================================
-    // ELIMINAR SERVICIO
-    // ======================================================
+    @Override
+    public Servicio obtenerPorId(Long id) {
+        return servicioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "Servicio no encontrado con id: " + id));
+    }
+
+   
+    //Método para eliminar un servicio
 
     @Override
     public void eliminarServicio(Long id) {
-        Servicio servicio = obtenerPorId(id);
-        servicioRepository.delete(servicio);
+        servicioRepository.delete(obtenerPorId(id));
     }
 
-    // ======================================================
-    // CREAR SERVICIO
-    // ======================================================
+   
+    // Método para crear un servicio
 
     @Override
     public Servicio crearServicio(
@@ -64,7 +69,6 @@ public class ServicioServiceImpl implements ServicioService {
             String telefonoSolicitante) {
 
         Servicio servicio = new Servicio();
-
         servicio.setTipoServicio(tipoServicio);
         servicio.setCiudad(ciudad);
         servicio.setDireccion(direccion);
@@ -73,175 +77,88 @@ public class ServicioServiceImpl implements ServicioService {
         servicio.setTelefonoSolicitante(telefonoSolicitante);
         servicio.setEstado(EstadoServicio.PENDIENTE);
 
-        Servicio servicioGuardado = servicioRepository.save(servicio);
+        servicio = servicioRepository.save(servicio);
 
-        // Crear historial inicial
-        ServicioTecnicoHistorial historial = new ServicioTecnicoHistorial();
-        historial.setServicio(servicioGuardado);
-        historial.setFechaInicio(LocalDateTime.now());
-        historialRepository.save(historial);
+        crearHistorial(servicio, null);
 
-        // 🔥 ASIGNACIÓN AUTOMÁTICA
-        tecnicoRepository.findAll().stream()
-                .filter(t -> t.getEstado() == EstadoTecnico.DISPONIBLE)
-                .filter(t -> t.getCiudad().equalsIgnoreCase(ciudad))
-                .findFirst()
-                .ifPresent(tecnicoDisponible -> {
+        asignacionAutomatica(servicio);
 
-                    // Cerrar historial PENDIENTE
-                    cerrarHistorialActivo(servicioGuardado.getId(), MotivoFinAsignacion.ASIGNACION);
-
-                    servicioGuardado.setTecnico(tecnicoDisponible);
-                    servicioGuardado.setEstado(EstadoServicio.ASIGNADO);
-
-                    tecnicoDisponible.setEstado(EstadoTecnico.OCUPADO);
-                    tecnicoDisponible.setUltimaAsignacion(LocalDateTime.now());
-
-                    tecnicoRepository.save(tecnicoDisponible);
-                    servicioRepository.save(servicioGuardado);
-
-                    // Crear nuevo historial con técnico
-                    ServicioTecnicoHistorial nuevoHistorial = new ServicioTecnicoHistorial();
-                    nuevoHistorial.setServicio(servicioGuardado);
-                    nuevoHistorial.setTecnico(tecnicoDisponible);
-                    nuevoHistorial.setFechaInicio(LocalDateTime.now());
-
-                    historialRepository.save(nuevoHistorial);
-                });
-
-        return servicioGuardado;
+        return servicio;
     }
 
-    // ======================================================
-    // OBTENER POR ID
-    // ======================================================
-
-    @Override
-    public Servicio obtenerPorId(Long id) {
-        return servicioRepository.findById(id)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "Servicio no encontrado con id: " + id));
-    }
-
-    // ======================================================
-    // ASIGNAR TÉCNICO
-    // ======================================================
+    
+    //Método para la asignación de un servicio a un técnico
+    
 
     @Override
     public Servicio asignarTecnico(Long servicioId, Long tecnicoId) {
 
         Servicio servicio = obtenerPorId(servicioId);
+        validarAsignacion(servicio);
 
-        if (servicio.getEstado() != EstadoServicio.PENDIENTE) {
-            throw new EstadoInvalidoException(
-                    "Solo se pueden asignar técnicos a servicios en estado PENDIENTE");
-        }
+        Tecnico tecnico = obtenerTecnicoDisponible(tecnicoId, servicio.getCiudad());
 
-        Tecnico tecnico = tecnicoRepository.findById(tecnicoId)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "Técnico no encontrado con id: " + tecnicoId));
-
-        if (tecnico.getEstado() != EstadoTecnico.DISPONIBLE) {
-            throw new EstadoInvalidoException("El técnico no está disponible");
-        }
-
-        if (!tecnico.getCiudad().equalsIgnoreCase(servicio.getCiudad())) {
-            throw new EstadoInvalidoException(
-                    "El técnico no pertenece a la misma ciudad del servicio");
-        }
-
-        // 1️⃣ Cerrar historial activo (PENDIENTE)
         cerrarHistorialActivo(servicioId, MotivoFinAsignacion.ASIGNACION);
 
-        // 2️⃣ Asignar técnico
-        servicio.setTecnico(tecnico);
-        servicio.setEstado(EstadoServicio.ASIGNADO);
+        asignar(servicio, tecnico);
 
-        tecnico.setEstado(EstadoTecnico.OCUPADO);
-        tecnico.setUltimaAsignacion(LocalDateTime.now());
-
-        tecnicoRepository.save(tecnico);
-        servicioRepository.save(servicio);
-
-        // 3️⃣ Crear nuevo historial
-        ServicioTecnicoHistorial nuevoHistorial = new ServicioTecnicoHistorial();
-        nuevoHistorial.setServicio(servicio);
-        nuevoHistorial.setTecnico(tecnico);
-        nuevoHistorial.setFechaInicio(LocalDateTime.now());
-
-        historialRepository.save(nuevoHistorial);
+        crearHistorial(servicio, tecnico);
 
         return servicio;
     }
 
-    // ======================================================
-    // REASIGNAR TÉCNICO
-    // ======================================================
-
+    
+    // Método para reasignar un técnico a un servicio
+   
     @Override
-    public void reasignarTecnico(Long idServicio, Long idTecnicoNuevo) {
+    public void reasignarTecnico(Long servicioId, Long tecnicoNuevoId) {
 
-        Servicio servicio = obtenerPorId(idServicio);
+        Servicio servicio = obtenerPorId(servicioId);
 
         if (servicio.getEstado() != EstadoServicio.ASIGNADO) {
             throw new EstadoInvalidoException(
-                    "Solo se pueden reasignar técnicos en servicios ASIGNADOS");
+                    "Solo se puede reasignar en estado ASIGNADO");
         }
 
         Tecnico tecnicoActual = servicio.getTecnico();
+        Tecnico tecnicoNuevo = obtenerTecnicoDisponible(tecnicoNuevoId, servicio.getCiudad());
 
-        Tecnico tecnicoNuevo = tecnicoRepository.findById(idTecnicoNuevo)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "Técnico no encontrado con id: " + idTecnicoNuevo));
+        cerrarHistorialActivo(servicioId, MotivoFinAsignacion.REASIGNACION);
 
-        if (tecnicoNuevo.getEstado() != EstadoTecnico.DISPONIBLE) {
-            throw new EstadoInvalidoException("El técnico nuevo no está disponible");
-        }
-
-        if (!tecnicoNuevo.getCiudad().equalsIgnoreCase(servicio.getCiudad())) {
-            throw new EstadoInvalidoException(
-                    "El técnico debe pertenecer a la misma ciudad");
-        }
-
-        // Cerrar historial actual
-        cerrarHistorialActivo(idServicio, MotivoFinAsignacion.REASIGNACION);
-
-        // Liberar técnico anterior
         tecnicoActual.setEstado(EstadoTecnico.DISPONIBLE);
         tecnicoRepository.save(tecnicoActual);
 
-        // Asignar nuevo técnico
-        servicio.setTecnico(tecnicoNuevo);
-        tecnicoNuevo.setEstado(EstadoTecnico.OCUPADO);
+        asignar(servicio, tecnicoNuevo);
 
-        tecnicoRepository.save(tecnicoNuevo);
-        servicioRepository.save(servicio);
-
-        // Crear nuevo historial
-        ServicioTecnicoHistorial nuevoHistorial = new ServicioTecnicoHistorial();
-        nuevoHistorial.setServicio(servicio);
-        nuevoHistorial.setTecnico(tecnicoNuevo);
-        nuevoHistorial.setFechaInicio(LocalDateTime.now());
-
-        historialRepository.save(nuevoHistorial);
+        crearHistorial(servicio, tecnicoNuevo);
     }
 
-    // ======================================================
-    // CAMBIAR ESTADO
-    // ======================================================
+    
+    // Método para los cambios de estado
 
     @Override
     public Servicio cambiarEstado(Long servicioId, EstadoServicio nuevoEstado) {
 
         Servicio servicio = obtenerPorId(servicioId);
 
-        if (servicio.getEstado() == EstadoServicio.FINALIZADO ||
-                servicio.getEstado() == EstadoServicio.CANCELADO) {
+        EstadoServicio estadoActual = servicio.getEstado();
+
+        //No permitir modificar servicios cerrados
+        if (estadoActual == EstadoServicio.FINALIZADO ||
+                estadoActual == EstadoServicio.CANCELADO) {
 
             throw new EstadoInvalidoException(
-                    "No se puede cambiar el estado de un servicio finalizado o cancelado");
+                    "El servicio ya está cerrado y no se puede cambiar de estado");
         }
 
+        //Valida los cambios de estados permitidos segun el flujo establecido
+        if (!estadoActual.puedeCambiarA(nuevoEstado)) {
+            throw new EstadoInvalidoException(
+                    "El servicio se encuentra " + estadoActual +
+                            " y no se puede cambiar a " + nuevoEstado);
+        }
+
+        // 🔄 Si se va a cerrar el servicio
         if (nuevoEstado == EstadoServicio.FINALIZADO ||
                 nuevoEstado == EstadoServicio.CANCELADO) {
 
@@ -251,34 +168,109 @@ public class ServicioServiceImpl implements ServicioService {
                             ? MotivoFinAsignacion.FINALIZADO
                             : MotivoFinAsignacion.CANCELADO);
 
-            if (servicio.getTecnico() != null) {
-                Tecnico tecnico = servicio.getTecnico();
-                tecnico.setEstado(EstadoTecnico.DISPONIBLE);
-                tecnicoRepository.save(tecnico);
-            }
+            liberarTecnico(servicio);
         }
 
         servicio.setEstado(nuevoEstado);
 
         return servicioRepository.save(servicio);
     }
+    
+    // Métodos privados
 
-    // ======================================================
-    // CERRAR HISTORIAL ACTIVO
-    // ======================================================
+    private void asignacionAutomatica(Servicio servicio) {
 
-    private void cerrarHistorialActivo(Long servicioId, MotivoFinAsignacion motivo) {
+        tecnicoRepository
+                .findFirstByEstadoAndCiudadIgnoreCase(
+                        EstadoTecnico.DISPONIBLE,
+                        servicio.getCiudad())
+                .ifPresent(tecnico -> {
 
-        ServicioTecnicoHistorial historialActivo = historialRepository
-                .findByServicioId(servicioId)
-                .stream()
-                .filter(h -> h.getFechaFin() == null)
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No hay historial activo"));
+                    cerrarHistorialActivo(
+                            servicio.getId(),
+                            MotivoFinAsignacion.ASIGNACION);
 
-        historialActivo.setFechaFin(LocalDateTime.now());
-        historialActivo.setMotivoFin(motivo);
+                    asignar(servicio, tecnico);
 
-        historialRepository.save(historialActivo);
+                    crearHistorial(servicio, tecnico);
+                });
+    }
+
+    private void asignar(Servicio servicio, Tecnico tecnico) {
+
+        try {
+
+            servicio.setTecnico(tecnico);
+            servicio.setEstado(EstadoServicio.ASIGNADO);
+
+            tecnico.setEstado(EstadoTecnico.OCUPADO);
+            tecnico.setUltimaAsignacion(LocalDateTime.now());
+
+            tecnicoRepository.save(tecnico); // 🔥 aquí ocurre el locking
+            servicioRepository.save(servicio);
+
+        } catch (ObjectOptimisticLockingFailureException ex) {
+
+            throw new EstadoInvalidoException(
+                    "El técnico fue asignado por otro proceso. Intente nuevamente.");
+        }
+    }
+
+    private void crearHistorial(Servicio servicio, Tecnico tecnico) {
+
+        ServicioTecnicoHistorial historial = new ServicioTecnicoHistorial();
+
+        historial.setServicio(servicio);
+        historial.setTecnico(tecnico);
+        historial.setFechaInicio(LocalDateTime.now());
+
+        historialRepository.save(historial);
+    }
+
+    private void cerrarHistorialActivo(Long servicioId,
+            MotivoFinAsignacion motivo) {
+
+        historialRepository
+                .findFirstByServicioIdAndFechaFinIsNull(servicioId)
+                .ifPresent(historial -> {
+                    historial.setFechaFin(LocalDateTime.now());
+                    historial.setMotivoFin(motivo);
+                    historialRepository.save(historial);
+                });
+    }
+
+    private void liberarTecnico(Servicio servicio) {
+
+        if (servicio.getTecnico() != null) {
+            Tecnico tecnico = servicio.getTecnico();
+            tecnico.setEstado(EstadoTecnico.DISPONIBLE);
+            tecnicoRepository.save(tecnico);
+        }
+    }
+
+    private void validarAsignacion(Servicio servicio) {
+        if (servicio.getEstado() != EstadoServicio.PENDIENTE) {
+            throw new EstadoInvalidoException(
+                    "Solo se puede asignar en estado PENDIENTE");
+        }
+    }
+
+    private Tecnico obtenerTecnicoDisponible(Long id, String ciudad) {
+
+        Tecnico tecnico = tecnicoRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "Técnico no encontrado"));
+
+        if (tecnico.getEstado() != EstadoTecnico.DISPONIBLE) {
+            throw new EstadoInvalidoException(
+                    "El técnico no está disponible");
+        }
+
+        if (!tecnico.getCiudad().equalsIgnoreCase(ciudad)) {
+            throw new EstadoInvalidoException(
+                    "El técnico debe pertenecer a la misma ciudad");
+        }
+
+        return tecnico;
     }
 }

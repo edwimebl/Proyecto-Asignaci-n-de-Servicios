@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.autoservicios.enums.EstadoTecnico;
 import jakarta.persistence.*;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "tecnicos")
@@ -64,5 +65,8 @@ public class Tecnico extends BaseEntity {
     public void setUltimaAsignacion(LocalDateTime ultimaAsignacion) {
         this.ultimaAsignacion = ultimaAsignacion;
     }
+
+    @Version
+    private Long version;
 
 }
